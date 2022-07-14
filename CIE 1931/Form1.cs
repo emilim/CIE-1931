@@ -11,7 +11,7 @@ using System.Windows.Forms;
 namespace CIE_1931
 {
     public partial class Form1 : Form
-    {
+    {      
         public Form1()
         {
             InitializeComponent();
@@ -79,7 +79,7 @@ namespace CIE_1931
                 }
             }
             */
-            double step = 0.01;
+            double step = 0.05;         
             for (double r = 0; r < 1; r += step)
             {
                 progressBar1.Value = (int)(r * 100);
@@ -89,45 +89,75 @@ namespace CIE_1931
                     {
                         double X, Y, Z;
                         convolution(380, 780, out X, out Y, out Z, r, g, b);
-                        double[] xy = new double[2];
-                        xy[0] = X / (X + Y + Z);
-                        xy[1] = Y / (X + Y + Z);
-                        double z = 1 - xy[0] - xy[1];
+                        double x = X / (X + Y + Z);
+                        double y = Y / (X + Y + Z);
+                        double z = 1 - x - y;
                         double[] XYZ = { X, Y, Z };
-                        double[] lms = xyz2lms(XYZ);
-                        double[] rgb = xyz2rgb(XYZ);
-                        //rgb[0] = rgb[0] > 1 ? 1 : rgb[0];
-                        //rgb[0] = rgb[0] < 0 ? 0 : rgb[0];
-                        //rgb[1] = rgb[1] > 1 ? 1 : rgb[1];
-                        //rgb[1] = rgb[1] < 0 ? 0 : rgb[1];
-                        //rgb[2] = rgb[2] > 1 ? 1 : rgb[2];
-                        //rgb[2] = rgb[2] < 0 ? 0 : rgb[2];
+                        //double[] lms = xyz2lms(XYZ);
+                        //double[] rgb = xyz2rgb(XYZ);
+                        double[] rgb = { r, g, b };
                         if (checkrgb(rgb))
                         {
                             Color color = Color.FromArgb((byte)(rgb[0] * 255), (byte)(rgb[1] * 255), (byte)(rgb[2] * 255));
-                            e.Graphics.FillRectangle(new SolidBrush(color), (float)xy[0] * pictureBox1.Width, pictureBox1.Height - (float)xy[1] * pictureBox1.Height, 5, 5);
+                            e.Graphics.FillRectangle(new SolidBrush(color), (float)x * pictureBox1.Width, pictureBox1.Height - (float)y * pictureBox1.Height, 5, 5);
                         }
                         if (rgbisNaN(rgb))
                         {
                             //Console.WriteLine("Red: " + rgb[0] + ", Green: " + rgb[1] + ", Blue: " + rgb[2] + ", x: " + xyz[0] + ", y:" + xyz[1]);
                             Color color = Color.FromArgb(155, 155, 155);
-                            e.Graphics.FillRectangle(new SolidBrush(color), (float)xy[0] * pictureBox1.Width, pictureBox1.Height - (float)xy[1] * pictureBox1.Height, 2, 2);
+                            e.Graphics.FillRectangle(new SolidBrush(color), (float)x * pictureBox1.Width, pictureBox1.Height - (float)y * pictureBox1.Height, 2, 2);
                         }
                     }
                 }
             }
-        }
-
-        private double Gauss(double x, double my, double sigma1, double sigma2)
-        {
-            double g = 0;
-            if (x < my)
+            
+            for (double lambda = 380; lambda < 640; lambda += step)
             {
-                g = Math.Exp(-(1 / 2) * Math.Pow(x - my, 2) / Math.Pow(sigma1, 2));
+                double X, Y, Z;
+                convolution2(380, 780, out X, out Y, out Z, lambda);
+                double x = X / (X + Y + Z);
+                double y = Y / (X + Y + Z);
+                double z = 1 - x - y;
+                
+                double hue = (650 - lambda) * 1.08;
+                Color color = ColorFromHSV(hue, 1, 1);
+                e.Graphics.FillRectangle(new SolidBrush(color), (float)x * pictureBox1.Width, pictureBox1.Height - (float)y * pictureBox1.Height, 5, 5);
             }
-            else if (x >= my)
+        }
+        public static Color ColorFromHSV(double hue, double saturation, double value)
+        {
+            int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
+            double f = hue / 60 - Math.Floor(hue / 60);
+
+            value = value * 255;
+            int v = Convert.ToInt32(value);
+            int p = Convert.ToInt32(value * (1 - saturation));
+            int q = Convert.ToInt32(value * (1 - f * saturation));
+            int t = Convert.ToInt32(value * (1 - (1 - f) * saturation));
+
+            if (hi == 0)
+                return Color.FromArgb(255, v, t, p);
+            else if (hi == 1)
+                return Color.FromArgb(255, q, v, p);
+            else if (hi == 2)
+                return Color.FromArgb(255, p, v, t);
+            else if (hi == 3)
+                return Color.FromArgb(255, p, q, v);
+            else if (hi == 4)
+                return Color.FromArgb(255, t, p, v);
+            else
+                return Color.FromArgb(255, v, p, q);
+        }
+        private double Gauss(double x, double mu, double sigma1, double sigma2)
+        {
+            double g;
+            if (x < mu)
             {
-                g = Math.Exp(-(1 / 2) * Math.Pow(x - my, 2) / Math.Pow(sigma2, 2));
+                g = Math.Exp(-0.5 * Math.Pow(x - mu, 2) / Math.Pow(sigma1, 2));
+            }
+            else
+            {
+                g = Math.Exp(-0.5 * Math.Pow(x - mu, 2) / Math.Pow(sigma2, 2));
             }
             return g;
         }        
@@ -135,31 +165,120 @@ namespace CIE_1931
         {
             X = 0; Y = 0; Z = 0;
             int N = 100;
-            double deltalambda = (lb - la) / N;
-            for (double i = la; i < lb; i+=deltalambda)
+            double delta = (lb - la) / N;
+            double xBar, yBar, zBar;
+            //double xMax = xBarMax(N, lb, la);
+            //double yMax = yBarMax(N, lb, la);
+            //double zMax = zBarMax(N, lb, la);
+            for (double lambda = la; lambda < lb; lambda+=delta)
             {
-                double xlambda = 1.056 * Gauss(i, 599.8, 37.9, 31.0) + 0.362 * Gauss(i, 442.0, 16.0, 26.7) - 0.065 * Gauss(i, 501.1, 20.4, 26.2);
-                double ylambda = 0.821 * Gauss(i, 568.8, 46.9, 40.5) + 0.286 * Gauss(i, 530.9, 16.3, 31.1);
-                double zlambda = 1.217 * Gauss(i, 437.0, 11.8, 36.0) + 0.681 * Gauss(i, 459.0, 26.0, 13.8);
+                xBar = xBarF(lambda);
+                yBar = yBarF(lambda);
+                zBar = zBarF(lambda);
 
-                X += xlambda * light(i, r, g, b);
-                Y += ylambda * light(i, r, g, b);
-                Z += zlambda * light(i, r, g, b);
+                X += xBar * radiance(lambda, r, g, b) * delta;
+                Y += yBar * radiance(lambda, r, g, b) * delta;
+                Z += zBar * radiance(lambda, r, g, b) * delta;
             }
-            X /= (lb - la);
-            Y /= (lb - la);
-            Z /= (lb - la);
+            //X *= (lb - la) / N / xMax;
+            //Y *= (lb - la) / N / yMax;
+            //Z *= (lb - la) / N / zMax;
+            //X: 541.199999999999, Y: 442.8, Z: 759.199999999999
+            X /= 541.199999999999;
+            Y /= 442.8;
+            Z /= 759.199999999999;
         }
-        private double light(double lambda, double r, double g, double b)
+        private void convolution2(int la, int lb, out double X, out double Y, out double Z, double mu)
+        {
+            X = 0; Y = 0; Z = 0;
+            int N = 100;
+            double delta = (lb - la) / N;
+            double xBar, yBar, zBar;
+            //double xMax = xBarMax(N, lb, la);
+            //double yMax = yBarMax(N, lb, la);
+            //double zMax = zBarMax(N, lb, la);
+            for (double lambda = la; lambda < lb; lambda += delta)
+            {
+                xBar = xBarF(lambda);
+                yBar = yBarF(lambda);
+                zBar = zBarF(lambda);
+                
+                X += xBar * laser(lambda, mu) * delta;
+                Y += yBar * laser(lambda, mu) * delta;
+                Z += zBar * laser(lambda, mu) * delta;
+            }
+            //X *= (lb - la) / N / xMax;
+            //Y *= (lb - la) / N / yMax;
+            //Z *= (lb - la) / N / zMax;
+            //X: 541.199999999999, Y: 442.8, Z: 759.199999999999
+            X /= 541.199999999999;
+            Y /= 442.8;
+            Z /= 759.199999999999;
+        }        
+        private double xBarMax(int N, double lb, double la)
+        {
+            double sum = 0;
+            double delta = (lb - la) / N;
+            for (int i = 0; i < N; i++)
+            {
+                sum += Math.Pow(xBarF(i * delta + la), 2);
+            }
+            return sum * (lb - la) / N;
+        }
+        private double yBarMax(int N, double lb, double la)
+        {
+            double sum = 0;
+            double delta = (lb - la) / N;
+            for (int i = 0; i < N; i++)
+            {
+                sum += Math.Pow(yBarF(i * delta + la), 2);
+            }
+            return sum * (lb - la) / N;
+        }
+        private double zBarMax(int N, double lb, double la)
+        {
+            double sum = 0;
+            double delta = (lb - la) / N;
+            for (int i = 0; i < N; i++)
+            {
+                sum += Math.Pow(zBarF(i * delta + la), 2);
+            }
+            return sum * (lb - la) / N;
+        }
+        private double xBarF(double lambda) 
+        {
+            double first = 1.056 * Gauss(lambda, 599.8, 37.9, 31.0);
+            double second = 0.362 * Gauss(lambda, 442.0, 16.0, 26.7);
+            double third = 0.065 * Gauss(lambda, 501.1, 20.4, 26.2);
+            double result = first + second - third;
+            return result;
+        }
+        private double yBarF(double lambda)
+        {
+            return 0.821 * Gauss(lambda, 568.8, 46.9, 40.5) + 0.286 * Gauss(lambda, 530.9, 16.3, 31.1);
+        }
+        private double zBarF(double lambda)
+        {
+            return 1.217 * Gauss(lambda, 437.0, 11.8, 36.0) + 0.681 * Gauss(lambda, 459.0, 26.0, 13.8);
+        }
+        private double laser(double lambda, double mu)
+        {
+            return Gauss(lambda, mu, 5, 5);
+        }
+        private double radiance(double lambda, double r, double g, double b)
         {
             double r0, g0, b0;
             r0 = 612; //SRGB
             g0 = 549; //SRGB
             b0 = 465; //SRGB
+            double ds = 5;
 
-            double result = r * Gauss(lambda, r0, 30, 30)
-                + g * Gauss(lambda, g0, 30, 30)
-                + b * Gauss(lambda, b0, 30, 30);
+            double result = r * Gauss(lambda, r0, ds, ds)
+                + g * Gauss(lambda, g0, ds, ds)
+                + b * Gauss(lambda, b0, ds, ds);
+            //Random rnd = new Random();
+            //result = rnd.NextDouble();
+            //result = 1;
             return result;
         }
         private bool checkxyz(double[] xyz)
